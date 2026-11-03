@@ -21,7 +21,7 @@ public class MainActivity extends Activity {
   private Uri source;
   private VideoView player;
   private SeekBar from, to;
-  private TextView info, queueView;
+  private TextView info, queueView, previewPosition, inTime, outTime;
   private long duration;
   private final ArrayList<long[]> ranges = new ArrayList<>();
   private boolean busy = false;
@@ -46,10 +46,26 @@ public class MainActivity extends Activity {
       if (source == null) return;
       if (player.isPlaying()) player.pause(); else player.start();
     });
-    layout.addView(label("START"));
+    previewPosition = label("Preview position: --:--.---");
+    layout.addView(previewPosition);
+    inTime = label("IN: 00:00.000");
+    layout.addView(inTime);
     from = new SeekBar(this); from.setMax(1000); layout.addView(from);
-    layout.addView(label("END"));
+    outTime = label("OUT: 00:00.000");
+    layout.addView(outTime);
     to = new SeekBar(this); to.setMax(1000); to.setProgress(1000); layout.addView(to);
+    LinearLayout nudge = new LinearLayout(this);
+    nudge.setOrientation(LinearLayout.HORIZONTAL);
+    layout.addView(nudge);
+    Button back = button("-0.1s", nudge);
+    Button forward = button("+0.1s", nudge);
+    TextView hint = label("Move either slider to preview that exact IN or OUT position. Tap -/+ for finer adjustments.");
+    layout.addView(hint);
+    final SeekBar[] active = {from};
+    from.setOnTouchListener((v,event) -> { if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) active[0] = from; return false; });
+    to.setOnTouchListener((v,event) -> { if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) active[0] = to; return false; });
+    back.setOnClickListener(v -> nudge(active[0], -100));
+    forward.setOnClickListener(v -> nudge(active[0], 100));
     info = label("Choose a video to begin"); layout.addView(info);
     queueView = label("No clips queued"); layout.addView(queueView);
     button("ADD SELECTED CLIP TO LIST", layout).setOnClickListener(v -> {
@@ -76,11 +92,19 @@ public class MainActivity extends Activity {
         if (from.getProgress() > to.getProgress()) {
           if (bar == from) to.setProgress(value); else from.setProgress(value);
         }
-        if (duration > 0) info.setText("Selected: " + fmt(selected()[0]) + " - " + fmt(selected()[1]));
+        if (duration > 0) {
+          long[] cut = selected();
+          inTime.setText("IN: " + fmt(cut[0]));
+          outTime.setText("OUT: " + fmt(cut[1]));
+          info.setText("Selected: " + fmt(cut[0]) + " - " + fmt(cut[1]));
+          if (user && source != null) showFrame(bar == from ? cut[0] : cut[1]);
+        }
       }
-      public void onStartTrackingTouch(SeekBar bar) {}
+      public void onStartTrackingTouch(SeekBar bar) {
+        if (player.isPlaying()) player.pause();
+      }
       public void onStopTrackingTouch(SeekBar bar) {
-        if (source != null) player.seekTo((int)selected()[0]);
+        if (source != null && duration > 0) showFrame(bar == from ? selected()[0] : selected()[1]);
       }
     };
     from.setOnSeekBarChangeListener(listener);
@@ -89,7 +113,29 @@ public class MainActivity extends Activity {
       duration = Math.max(1, mp.getDuration());
       from.setProgress(0); to.setProgress(1000);
       info.setText("Video loaded: " + fmt(duration));
+      inTime.setText("IN: " + fmt(0));
+      outTime.setText("OUT: " + fmt(duration));
+      showFrame(0);
     });
+  }
+
+  private void showFrame(long positionMs) {
+    long position = Math.max(0, Math.min(duration, positionMs));
+    if (player.isPlaying()) player.pause();
+    player.seekTo((int)Math.min(Integer.MAX_VALUE, position));
+    previewPosition.setText("Preview position: " + fmt(position));
+  }
+
+  private void nudge(SeekBar bar, long changeMs) {
+    if (source == null || duration <= 0) return;
+    long now = duration * bar.getProgress() / 1000;
+    long target = Math.max(0, Math.min(duration, now + changeMs));
+    bar.setProgress((int)(target * 1000 / duration));
+    if (bar == from && bar.getProgress() > to.getProgress()) to.setProgress(bar.getProgress());
+    if (bar == to && bar.getProgress() < from.getProgress()) from.setProgress(bar.getProgress());
+    showFrame(target);
+    inTime.setText("IN: " + fmt(selected()[0]));
+    outTime.setText("OUT: " + fmt(selected()[1]));
   }
 
   private TextView label(String s) {
