@@ -10,6 +10,7 @@ import android.graphics.Color;
 import android.media.MediaExtractor;
 import android.media.MediaMuxer;
 import android.media.MediaFormat;
+import android.media.MediaCodec;
 import android.view.View;
 import android.widget.*;
 import java.nio.ByteBuffer;
